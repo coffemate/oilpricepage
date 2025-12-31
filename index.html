@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
+    />
+    <title>加油站油价</title>
+
+    <style>
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto;
+        background: #f6f7f9;
+      }
+
+      /* 顶部控制区 */
+      .header {
+        position: sticky;
+        top: 0;
+        background: white;
+        padding: 12px;
+        border-bottom: 1px solid #ddd;
+        z-index: 10;
+      }
+
+      .controls {
+        display: flex;
+        gap: 8px;
+      }
+
+      select,
+      button {
+        flex: 1;
+        padding: 8px;
+        font-size: 14px;
+      }
+
+      /* 手机卡片 */
+      .list {
+        padding: 12px;
+      }
+
+      .card {
+        background: white;
+        border-radius: 10px;
+        padding: 12px;
+        margin-bottom: 12px;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+      }
+
+      .card h3 {
+        margin: 0 0 6px 0;
+        font-size: 16px;
+      }
+
+      .card .id {
+        font-size: 12px;
+        color: #777;
+      }
+
+      .card .address {
+        font-size: 13px;
+        color: #555;
+        margin-top: 4px;
+      }
+
+      .price-row {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 10px;
+      }
+
+      .price {
+        text-align: center;
+      }
+
+      .price .label {
+        font-size: 12px;
+        color: #666;
+      }
+
+      .price .value {
+        font-size: 18px;
+        font-weight: bold;
+      }
+
+      .market {
+        color: #333;
+      }
+
+      .sale {
+        color: #e53935;
+      }
+
+      /* 手机端默认 */
+      table {
+        display: none;
+      }
+
+      /* 桌面端表格 */
+      @media (min-width: 900px) {
+        .list {
+          padding: 20px;
+        }
+
+        /* 隐藏手机卡片 */
+        .card {
+          display: none;
+        }
+
+        /* 显示表格 */
+        table {
+          display: table;
+          width: 100%;
+          border-collapse: collapse;
+          background: white;
+        }
+
+        th,
+        td {
+          padding: 10px;
+          border-bottom: 1px solid #eee;
+          text-align: center;
+        }
+
+        th {
+          background: #f2f2f2;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="header">
+      <div class="controls">
+        <select id="oilType">
+          <option value="92" selected>92</option>
+          <option value="95">95</option>
+          <option value="98">98</option>
+          <option value="0">0</option>
+        </select>
+
+        <select id="priceType">
+          <option value="market_price">挂牌价</option>
+          <option value="top_sale_price" selected>优惠价</option>
+        </select>
+
+        <button onclick="render()">排序</button>
+      </div>
+    </div>
+
+    <div class="list" id="list"></div>
+
+    <table id="table">
+      <thead>
+        <tr>
+          <th>站点ID</th>
+          <th>站点名称</th>
+          <th>地址</th>
+          <th>油品</th>
+          <th>挂牌价</th>
+          <th>优惠价</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <script>
+      const SUPABASE_URL = "https://nmfaolamflaqrdrjycps.supabase.co";
+      const SUPABASE_ANON_KEY =
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5tZmFvbGFtZmxhcXJkcmp5Y3BzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUzNTQ1MjgsImV4cCI6MjA4MDkzMDUyOH0.h-3dELhVoFXHLM1gvD5AP6BZK_crG4O74YVBtBJjItw";
+
+      const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+      let data = [];
+
+      async function load() {
+        const { data: rows, error } = await db.from("oil_prices").select(`
+      station_id,
+      oil_type,
+      market_price,
+      top_sale_price,
+      stations(name,address)
+    `);
+
+        console.log("rows:", rows);
+        console.log("error:", error);
+
+        if (error) {
+          alert(error.message);
+          return;
+        }
+
+        if (!rows || rows.length === 0) {
+          alert("oil_prices 表没有数据 或 关联失败");
+          return;
+        }
+
+        const map = {};
+        rows.forEach((r) => {
+          console.log("row:", r);
+
+          if (!map[r.station_id]) {
+            map[r.station_id] = {
+              id: r.station_id,
+              name: r.stations?.name || "未知站点",
+              address: r.stations?.address || "",
+              prices: {},
+            };
+          }
+
+          map[r.station_id].prices[r.oil_type] = {
+            market: r.market_price,
+            sale: r.top_sale_price,
+          };
+        });
+
+        data = Object.values(map);
+
+        oilType.value = "92"; // 默认 92
+        priceType.value = "top_sale_price"; // 默认 优惠价
+
+        render();
+      }
+
+      function render() {
+        const oil = oilType.value;
+        const priceKey = priceType.value === "market_price" ? "market" : "sale";
+
+        const sorted = [...data].sort((a, b) => {
+          const pa = a.prices[oil]?.[priceKey];
+          const pb = b.prices[oil]?.[priceKey];
+          if (pa == null) return 1;
+          if (pb == null) return -1;
+          return pa - pb;
+        });
+
+        renderCards(sorted, oil);
+        renderTable(sorted, oil);
+      }
+
+      function renderCards(list, oil) {
+        const el = document.getElementById("list");
+        el.innerHTML = "";
+
+        list.forEach((st) => {
+          const p = st.prices[oil];
+          if (!p) return;
+
+          el.innerHTML += `
+      <div class="card">
+        <h3>${st.name}</h3>
+        <div class="id">ID: ${st.id}</div>
+        <div class="address">${st.address}</div>
+
+        <div class="price-row">
+          <div class="price">
+            <div class="label">挂牌价</div>
+            <div class="value market">${p.market.toFixed(2)}</div>
+          </div>
+          <div class="price">
+            <div class="label">优惠价</div>
+            <div class="value sale">${p.sale.toFixed(2)}</div>
+          </div>
+        </div>
+      </div>
+    `;
+        });
+      }
+
+      function renderTable(list, oil) {
+        const tbody = document.getElementById("tbody");
+        tbody.innerHTML = "";
+
+        list.forEach((st) => {
+          const p = st.prices[oil];
+          if (!p) return;
+
+          tbody.innerHTML += `
+      <tr>
+        <td>${st.id}</td>
+        <td>${st.name}</td>
+        <td>${st.address}</td>
+        <td>${oil}</td>
+        <td>${p.market.toFixed(2)}</td>
+        <td>${p.sale.toFixed(2)}</td>
+      </tr>
+    `;
+        });
+      }
+
+      load();
+    </script>
+  </body>
+</html>
