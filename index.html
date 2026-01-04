@@ -198,7 +198,7 @@
     oil_type,
     market_price,
     top_sale_price,
-    created_at,
+    price_time,
     stations(name,address)
   `);
 
@@ -231,7 +231,7 @@
           map[r.station_id].prices[r.oil_type] = {
             market: r.market_price,
             sale: r.top_sale_price,
-            created_at: r.created_at,
+            price_time: r.price_time,
           };
         });
 
@@ -284,7 +284,7 @@
           </div>
           <div class="time">
             <div class="label">抓取时间</div>
-            <div class="value time">${formatTime(p.created_at)}</div>
+            <div class="value time">${formatTime(p.price_time)}</div>
 
         </div>
       </div>
@@ -308,7 +308,7 @@
         <td>${oil}</td>
         <td>${p.market.toFixed(2)}</td>
         <td>${p.sale.toFixed(2)}</td>
-        <td>${formatTime(p.created_at)}</td>
+        <td>${formatTime(p.price_time)}</td>
       </tr>
     `;
         });
