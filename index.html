@@ -167,7 +167,7 @@
           <th>油品</th>
           <th>挂牌价</th>
           <th>优惠价</th>
-          <th>抓取时间</th>
+          <th>价格时间</th>
         </tr>
       </thead>
       <tbody id="tbody"></tbody>
@@ -183,13 +183,6 @@
       const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
       let data = [];
-      function formatTime(ts) {
-        const d = new Date(ts);
-        return d.toLocaleString("zh-CN", {
-          hour12: false,
-          timeZone: "Asia/Shanghai",
-        });
-      }
 
       async function load() {
         const { data: rows, error } = await db.from("latest_oil_prices")
@@ -198,7 +191,8 @@
     oil_type,
     market_price,
     top_sale_price,
-    price_time,
+    price_date,
+    created_at,
     stations(name,address)
   `);
 
@@ -231,7 +225,7 @@
           map[r.station_id].prices[r.oil_type] = {
             market: r.market_price,
             sale: r.top_sale_price,
-            price_time: r.price_time,
+            price_date: r.price_date,
           };
         });
 
@@ -283,8 +277,8 @@
             <div class="value sale">${p.sale.toFixed(2)}</div>
           </div>
           <div class="time">
-            <div class="label">抓取时间</div>
-            <div class="value time">${formatTime(p.price_time)}</div>
+            <div class="label">价格时间</div>
+            <div class="value time">${p.price_date}</div>
 
         </div>
       </div>
@@ -308,7 +302,7 @@
         <td>${oil}</td>
         <td>${p.market.toFixed(2)}</td>
         <td>${p.sale.toFixed(2)}</td>
-        <td>${formatTime(p.price_time)}</td>
+        <td>${p.price_date}</td>
       </tr>
     `;
         });
