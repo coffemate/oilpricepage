@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>油站详情</title>
+    <style>
+      :root {
+        --bg: #f3f5f9;
+        --card: #fff;
+        --border: #e5e7eb;
+        --text: #111827;
+        --muted: #6b7280;
+        --danger: #d32f2f;
+        --success: #1b8f3d;
+        --brand: #2563eb;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+      .container { width: min(1200px, 100% - 24px); margin: 12px auto 24px; }
+      .panel {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 12px;
+        margin-bottom: 12px;
+      }
+      .toolbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+      .btn {
+        border: none;
+        background: var(--brand);
+        color: #fff;
+        border-radius: 8px;
+        padding: 8px 12px;
+        cursor: pointer;
+      }
+      .meta { color: var(--muted); font-size: 13px; }
+      .chart-wrap { height: 300px; }
+
+      .arrow { margin-left: 2px; font-weight: 700; }
+      .arrow.up { color: var(--danger); }
+      .arrow.down { color: var(--success); }
+
+      .cards { display: grid; gap: 10px; }
+      .day-card {
+        background: #fff;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 10px;
+      }
+      .day-header { font-weight: 600; margin-bottom: 8px; }
+      .oil-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+      .oil-box { background: #f8fafc; border-radius: 8px; padding: 8px; }
+      .oil-title { font-size: 13px; color: var(--muted); }
+      .oil-price { font-size: 14px; margin-top: 4px; }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: #fff;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+        display: none;
+      }
+      th, td {
+        border-bottom: 1px solid var(--border);
+        padding: 10px;
+        text-align: left;
+        font-size: 14px;
+      }
+      th { background: #f9fafb; }
+
+      .loading, .error { text-align: center; color: var(--muted); padding: 16px; }
+
+      @media (min-width: 900px) {
+        .cards { display: none; }
+        table { display: table; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="panel toolbar">
+        <div>
+          <h2 id="title" style="margin:0 0 4px;">油站详情</h2>
+          <div id="subTitle" class="meta"></div>
+        </div>
+        <button class="btn" type="button" onclick="window.location.href='index.html'">返回列表</button>
+      </div>
+
+      <div class="panel">
+        <div class="meta" style="margin-bottom:8px;">最近 7 天挂牌价 / 优惠价趋势</div>
+        <!-- 新增功能：详情页7天折线图 -->
+        <div class="chart-wrap"><canvas id="detailChart"></canvas></div>
+      </div>
+
+      <div id="loading" class="loading">数据加载中...</div>
+      <div id="error" class="error" style="display:none;"></div>
+      <div id="cards" class="cards"></div>
+
+      <table id="table">
+        <thead>
+          <tr>
+            <th>日期</th>
+            <th>油号</th>
+            <th>挂牌价</th>
+            <th>优惠价</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+      const SUPABASE_URL = "https://nmfaolamflaqrdrjycps.supabase.co";
+      const SUPABASE_ANON_KEY =
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5tZmFvbGFtZmxhcXJkcmp5Y3BzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUzNTQ1MjgsImV4cCI6MjA4MDkzMDUyOH0.h-3dELhVoFXHLM1gvD5AP6BZK_crG4O74YVBtBJjItw";
+      const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+      const oilTypes = ["92", "95", "98", "0"];
+      const params = new URLSearchParams(window.location.search);
+      // 新增功能：通过URL参数 station_id 获取站点ID。
+      const stationId = params.get("station_id");
+
+      const loadingEl = document.getElementById("loading");
+      const errorEl = document.getElementById("error");
+      const cardsEl = document.getElementById("cards");
+      const tbodyEl = document.getElementById("tbody");
+      let chart = null;
+
+      const normalizeDate = (d) => String(d || "").slice(0, 10);
+      const fmt = (n) => (Number.isFinite(n) ? n.toFixed(2) : "-");
+
+      // 新增关键逻辑：每日价格与前一天对比，显示涨跌箭头。
+      function arrow(delta) {
+        if (delta > 0) return '<span class="arrow up">↑</span>';
+        if (delta < 0) return '<span class="arrow down">↓</span>';
+        return "";
+      }
+
+      async function fetchStationAndPrices() {
+        const today = new Date();
+        const from = new Date(today);
+        from.setDate(from.getDate() - 7);
+        const fromDate = from.toISOString().slice(0, 10);
+
+        const [stationResp, priceResp] = await Promise.all([
+          db
+            .from("stations")
+            .select("id,name,address,disabled")
+            .eq("id", stationId)
+            .single(),
+          db
+            .from("oil_prices")
+            .select("station_id,oil_type,market_price,top_sale_price,price_date")
+            .eq("station_id", stationId)
+            .gte("price_date", fromDate)
+            .order("price_date", { ascending: true }),
+        ]);
+
+        if (stationResp.error) throw stationResp.error;
+        if (priceResp.error) throw priceResp.error;
+
+        return { station: stationResp.data, rows: priceResp.data || [] };
+      }
+
+      function groupByDay(rows) {
+        const map = new Map();
+        for (const row of rows) {
+          const d = normalizeDate(row.price_date);
+          if (!map.has(d)) map.set(d, {});
+          map.get(d)[String(row.oil_type)] = {
+            market: Number(row.market_price),
+            sale: Number(row.top_sale_price),
+          };
+        }
+        return new Map([...map.entries()].sort((a, b) => a[0].localeCompare(b[0])));
+      }
+
+      function renderTableAndCards(dayMap) {
+        cardsEl.innerHTML = "";
+        tbodyEl.innerHTML = "";
+
+        const dates = [...dayMap.keys()];
+        for (let i = 0; i < dates.length; i++) {
+          const d = dates[i];
+          const curr = dayMap.get(d);
+          const prev = i > 0 ? dayMap.get(dates[i - 1]) : null;
+
+          const card = document.createElement("article");
+          card.className = "day-card";
+          let cardHtml = `<div class="day-header">${d}</div><div class="oil-grid">`;
+
+          for (const oil of oilTypes) {
+            const p = curr[oil];
+            if (!p) continue;
+            const prevP = prev?.[oil];
+            const md = prevP ? p.market - prevP.market : 0;
+            const sd = prevP ? p.sale - prevP.sale : 0;
+
+            cardHtml += `
+              <div class="oil-box">
+                <div class="oil-title">${oil}号油</div>
+                <div class="oil-price">挂牌：¥${fmt(p.market)} ${arrow(md)}</div>
+                <div class="oil-price">优惠：¥${fmt(p.sale)} ${arrow(sd)}</div>
+              </div>
+            `;
+
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+              <td>${d}</td>
+              <td>${oil}</td>
+              <td>¥${fmt(p.market)} ${arrow(md)}</td>
+              <td>¥${fmt(p.sale)} ${arrow(sd)}</td>
+            `;
+            tbodyEl.appendChild(tr);
+          }
+          cardHtml += "</div>";
+          card.innerHTML = cardHtml;
+          cardsEl.appendChild(card);
+        }
+      }
+
+      // 新增关键逻辑：绘制站点7天折线图（各油号挂牌价+优惠价）
+      function renderChart(dayMap) {
+        const labels = [...dayMap.keys()];
+        const colors = { "92": "#ef4444", "95": "#3b82f6", "98": "#8b5cf6", "0": "#10b981" };
+        const datasets = [];
+
+        for (const oil of oilTypes) {
+          datasets.push({
+            label: `${oil} 挂牌价`,
+            data: labels.map((d) => dayMap.get(d)?.[oil]?.market ?? null),
+            borderColor: colors[oil],
+            borderWidth: 2,
+            tension: 0.25,
+            spanGaps: true,
+          });
+          datasets.push({
+            label: `${oil} 优惠价`,
+            data: labels.map((d) => dayMap.get(d)?.[oil]?.sale ?? null),
+            borderColor: colors[oil],
+            borderDash: [6, 4],
+            borderWidth: 2,
+            tension: 0.25,
+            spanGaps: true,
+          });
+        }
+
+        if (chart) chart.destroy();
+        chart = new Chart(document.getElementById("detailChart"), {
+          type: "line",
+          data: { labels, datasets },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: "index", intersect: false },
+            plugins: { legend: { position: "bottom" } },
+            scales: { y: { ticks: { callback: (v) => `¥${v}` } } },
+          },
+        });
+      }
+
+      async function init() {
+        if (!stationId) {
+          errorEl.style.display = "block";
+          errorEl.textContent = "缺少 station_id 参数，请从列表页进入。";
+          return;
+        }
+
+        try {
+          loadingEl.style.display = "block";
+          const { station, rows } = await fetchStationAndPrices();
+
+          if (!station || station.disabled) {
+            throw new Error("站点不存在或已禁用");
+          }
+
+          document.getElementById("title").textContent = `${station.name}（ID: ${station.id}）`;
+          document.getElementById("subTitle").textContent = station.address || "";
+
+          const dayMap = groupByDay(rows);
+          renderChart(dayMap);
+          renderTableAndCards(dayMap);
+
+          loadingEl.style.display = "none";
+        } catch (err) {
+          loadingEl.style.display = "none";
+          errorEl.style.display = "block";
+          errorEl.textContent = `加载失败：${err.message || err}`;
+        }
+      }
+
+      init();
+    </script>
+  </body>
+</html>

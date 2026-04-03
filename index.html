@@ -2,312 +2,517 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
-    />
-    <title>加油站油价</title>
-
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>油站油价列表</title>
     <style>
-      body {
-        margin: 0;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto;
-        background: #f6f7f9;
+      :root {
+        --bg: #f3f5f9;
+        --card: #ffffff;
+        --text: #1f2937;
+        --muted: #6b7280;
+        --border: #e5e7eb;
+        --danger: #d32f2f;
+        --success: #1b8f3d;
+        --brand: #2563eb;
       }
 
-      /* 顶部控制区 */
-      .header {
-        position: sticky;
-        top: 0;
-        background: white;
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+
+      .container {
+        width: min(1200px, 100% - 24px);
+        margin: 12px auto 24px;
+      }
+
+      .panel {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
         padding: 12px;
-        border-bottom: 1px solid #ddd;
-        z-index: 10;
+        margin-bottom: 12px;
       }
 
       .controls {
-        display: flex;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+
+      select, button {
+        width: 100%;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 10px;
+        font-size: 14px;
+        background: #fff;
+      }
+
+      button {
+        background: var(--brand);
+        color: #fff;
+        border: none;
+        cursor: pointer;
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 8px;
       }
 
-      select,
-      button {
-        flex: 1;
-        padding: 8px;
-        font-size: 14px;
-      }
-
-      /* 手机卡片 */
-      .list {
-        padding: 12px;
-      }
-
-      .card {
-        background: white;
+      .stat-card {
+        border: 1px solid var(--border);
         border-radius: 10px;
+        padding: 10px;
+      }
+      .stat-title { font-size: 12px; color: var(--muted); }
+      .stat-value { font-size: 22px; font-weight: 700; margin-top: 4px; }
+      .rise { color: var(--danger); }
+      .fall { color: var(--success); }
+
+      .chart-wrap { height: 280px; }
+
+      .card-list { display: grid; gap: 10px; }
+      .station-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
         padding: 12px;
-        margin-bottom: 12px;
-        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+        cursor: pointer;
       }
-
-      .card h3 {
-        margin: 0 0 6px 0;
-        font-size: 16px;
-      }
-
-      .card .id {
-        font-size: 12px;
-        color: #777;
-      }
-
-      .card .address {
-        font-size: 13px;
-        color: #555;
-        margin-top: 4px;
-      }
-
-      .price-row {
-        display: flex;
-        justify-content: space-between;
+      .station-card h3 { margin: 0 0 6px; font-size: 16px; }
+      .meta { font-size: 12px; color: var(--muted); }
+      .price-grid {
         margin-top: 10px;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
       }
+      .price-box { background: #f8fafc; border-radius: 8px; padding: 8px; }
+      .price-label { font-size: 12px; color: var(--muted); }
+      .price-value { font-weight: 700; font-size: 20px; }
 
-      .price {
-        text-align: center;
-      }
+      .arrow { margin-left: 4px; font-size: 14px; font-weight: 700; }
+      .arrow.up { color: var(--danger); }
+      .arrow.down { color: var(--success); }
 
-      .price .label {
-        font-size: 12px;
-        color: #666;
-      }
-
-      .price .value {
-        font-size: 18px;
-        font-weight: bold;
-      }
-
-      .time {
-        font-size: 12px;
-        color: #b9b9b9;
-      }
-
-      .market {
-        color: #333;
-      }
-
-      .sale {
-        color: #e53935;
-      }
-
-      /* 手机端默认 */
       table {
+        width: 100%;
+        border-collapse: collapse;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
         display: none;
       }
+      th, td {
+        border-bottom: 1px solid var(--border);
+        padding: 10px;
+        text-align: left;
+        font-size: 14px;
+      }
+      th { background: #f9fafb; font-weight: 600; }
+      tbody tr { cursor: pointer; }
+      tbody tr:hover { background: #f8fafc; }
 
-      /* 桌面端表格 */
+      .loading, .error {
+        padding: 16px;
+        text-align: center;
+        color: var(--muted);
+      }
+
       @media (min-width: 900px) {
-        .list {
-          padding: 20px;
-        }
-
-        /* 隐藏手机卡片 */
-        .card {
-          display: none;
-        }
-
-        /* 显示表格 */
-        table {
-          display: table;
-          width: 100%;
-          border-collapse: collapse;
-          background: white;
-        }
-
-        th,
-        td {
-          padding: 10px;
-          border-bottom: 1px solid #eee;
-          text-align: center;
-        }
-
-        th {
-          background: #f2f2f2;
-        }
+        .card-list { display: none; }
+        table { display: table; }
       }
     </style>
   </head>
-
   <body>
-    <div class="header">
-      <div class="controls">
-        <select id="oilType">
-          <option value="92" selected>92</option>
-          <option value="95">95</option>
-          <option value="98">98</option>
-          <option value="0">0</option>
-        </select>
+    <div class="container">
+      <div class="panel">
+        <div class="controls">
+          <select id="oilTypeSelect" aria-label="油号">
+            <option value="92">92</option>
+            <option value="95">95</option>
+            <option value="98">98</option>
+            <option value="0">0</option>
+          </select>
+          <select id="priceTypeSelect" aria-label="价格类型">
+            <option value="market">挂牌价</option>
+            <option value="sale" selected>优惠价</option>
+          </select>
+          <button id="sortBtn" type="button">按当前条件排序</button>
+        </div>
 
-        <select id="priceType">
-          <option value="market_price">挂牌价</option>
-          <option value="top_sale_price" selected>优惠价</option>
-        </select>
-
-        <button onclick="render()">排序</button>
+        <!-- 新增功能：列表顶部统计信息（上涨/下降站点数量与金额） -->
+        <div class="stats">
+          <div class="stat-card">
+            <div class="stat-title" id="riseTitle">当天优惠价上涨（按所选油号）</div>
+            <div class="stat-value rise" id="riseStats">0站 / ¥0.00</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-title" id="fallTitle">当天优惠价下降（按所选油号）</div>
+            <div class="stat-value fall" id="fallStats">0站 / ¥0.00</div>
+          </div>
+        </div>
       </div>
+
+      <div class="panel">
+        <div class="meta" style="margin-bottom:8px;">最近 7 天不同油号挂牌价与优惠价趋势（全站均值）</div>
+        <!-- 新增功能：7天折线图 -->
+        <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
+      </div>
+
+      <div id="loading" class="loading">数据加载中...</div>
+      <div id="error" class="error" style="display:none;"></div>
+      <div id="cardList" class="card-list"></div>
+
+      <table id="tableView" aria-label="油站列表">
+        <thead>
+          <tr>
+            <th>站点ID</th>
+            <th>名称</th>
+            <th>地址</th>
+            <th>油号</th>
+            <th>挂牌价</th>
+            <th>优惠价</th>
+            <th>日期</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
     </div>
 
-    <div class="list" id="list"></div>
-
-    <table id="table">
-      <thead>
-        <tr>
-          <th>站点ID</th>
-          <th>站点名称</th>
-          <th>地址</th>
-          <th>油品</th>
-          <th>挂牌价</th>
-          <th>优惠价</th>
-          <th>价格时间</th>
-        </tr>
-      </thead>
-      <tbody id="tbody"></tbody>
-    </table>
-
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
       const SUPABASE_URL = "https://nmfaolamflaqrdrjycps.supabase.co";
       const SUPABASE_ANON_KEY =
         "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5tZmFvbGFtZmxhcXJkcmp5Y3BzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUzNTQ1MjgsImV4cCI6MjA4MDkzMDUyOH0.h-3dELhVoFXHLM1gvD5AP6BZK_crG4O74YVBtBJjItw";
-
       const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-      let data = [];
+      const oilTypes = ["92", "95", "98", "0"];
+      const state = {
+        latestRows: [],
+        historyRows: [],
+        stationMap: new Map(),
+        chart: null,
+      };
 
-      async function load() {
-        const { data: rows, error } = await db.from("latest_oil_prices")
-          .select(`
-    station_id,
-    oil_type,
-    market_price,
-    top_sale_price,
-    price_date,
-    stations(name,address)
-  `);
+      const loadingEl = document.getElementById("loading");
+      const errorEl = document.getElementById("error");
+      const oilTypeSelect = document.getElementById("oilTypeSelect");
+      const priceTypeSelect = document.getElementById("priceTypeSelect");
+      const sortBtn = document.getElementById("sortBtn");
 
-        console.log("rows:", rows);
-        console.log("error:", error);
+      function formatPrice(v) {
+        return Number.isFinite(v) ? v.toFixed(2) : "-";
+      }
 
-        if (error) {
-          alert(error.message);
-          return;
-        }
+      function normalizeDate(d) {
+        return String(d || "").slice(0, 10);
+      }
 
-        if (!rows || rows.length === 0) {
-          alert("oil_prices 表没有数据 或 关联失败");
-          return;
-        }
+      // 新增关键逻辑：根据“当天 vs 前一天”计算涨跌箭头。
+      function getArrow(delta) {
+        if (delta > 0) return '<span class="arrow up">↑</span>';
+        if (delta < 0) return '<span class="arrow down">↓</span>';
+        return "";
+      }
 
-        const map = {};
-        rows.forEach((r) => {
-          console.log("row:", r);
+      async function fetchData() {
+        const today = new Date();
+        const from = new Date(today);
+        from.setDate(from.getDate() - 7);
+        const fromDate = from.toISOString().slice(0, 10);
 
-          if (!map[r.station_id]) {
-            map[r.station_id] = {
-              id: r.station_id,
-              name: r.stations?.name || "未知站点",
-              address: r.stations?.address || "",
+        const [latestResp, historyResp] = await Promise.all([
+          db
+            .from("latest_oil_prices")
+            .select(`
+              station_id,
+              oil_type,
+              market_price,
+              top_sale_price,
+              price_date,
+              stations!inner(name,address,disabled)
+            `)
+            .eq("stations.disabled", false),
+          db
+            .from("oil_prices")
+            .select(`
+              station_id,
+              oil_type,
+              market_price,
+              top_sale_price,
+              price_date,
+              stations!inner(disabled)
+            `)
+            .eq("stations.disabled", false)
+            .gte("price_date", fromDate)
+            .order("price_date", { ascending: true }),
+        ]);
+
+        if (latestResp.error) throw latestResp.error;
+        if (historyResp.error) throw historyResp.error;
+
+        state.latestRows = latestResp.data || [];
+        state.historyRows = historyResp.data || [];
+      }
+
+      function buildStationMap() {
+        const map = new Map();
+
+        for (const row of state.latestRows) {
+          const sid = row.station_id;
+          if (!map.has(sid)) {
+            map.set(sid, {
+              id: sid,
+              name: row.stations?.name || "未知站点",
+              address: row.stations?.address || "",
               prices: {},
-            };
+            });
           }
-
-          map[r.station_id].prices[r.oil_type] = {
-            market: r.market_price,
-            sale: r.top_sale_price,
-            price_date: r.price_date,
+          map.get(sid).prices[String(row.oil_type)] = {
+            market: Number(row.market_price),
+            sale: Number(row.top_sale_price),
+            date: normalizeDate(row.price_date),
           };
-        });
+        }
 
-        data = Object.values(map);
+        const dailyMap = new Map();
+        for (const row of state.historyRows) {
+          const sid = row.station_id;
+          const oil = String(row.oil_type);
+          const date = normalizeDate(row.price_date);
+          const key = `${sid}__${oil}`;
+          if (!dailyMap.has(key)) dailyMap.set(key, []);
+          dailyMap.get(key).push({
+            date,
+            market: Number(row.market_price),
+            sale: Number(row.top_sale_price),
+          });
+        }
 
-        oilType.value = "92"; // 默认 92
-        priceType.value = "top_sale_price"; // 默认 优惠价
+        for (const [, records] of dailyMap) {
+          records.sort((a, b) => a.date.localeCompare(b.date));
+        }
 
-        render();
+        for (const [sid, station] of map) {
+          for (const oil of oilTypes) {
+            const key = `${sid}__${oil}`;
+            const list = dailyMap.get(key) || [];
+            if (list.length >= 2) {
+              const prev = list[list.length - 2];
+              const curr = list[list.length - 1];
+              if (station.prices[oil]) {
+                station.prices[oil].marketDelta = curr.market - prev.market;
+                station.prices[oil].saleDelta = curr.sale - prev.sale;
+              }
+            } else if (station.prices[oil]) {
+              station.prices[oil].marketDelta = 0;
+              station.prices[oil].saleDelta = 0;
+            }
+          }
+        }
+
+        state.stationMap = map;
       }
 
-      function render() {
-        const oil = oilType.value;
-        const priceKey = priceType.value === "market_price" ? "market" : "sale";
+      // 新增关键逻辑：顶部统计（今天优惠价上涨/下降站点数与总金额）
+      function computeDailyStats(selectedOil) {
+        let riseCount = 0;
+        let riseAmount = 0;
+        let fallCount = 0;
+        let fallAmount = 0;
 
-        const sorted = [...data].sort((a, b) => {
-          const pa = a.prices[oil]?.[priceKey];
-          const pb = b.prices[oil]?.[priceKey];
-          if (pa == null) return 1;
-          if (pb == null) return -1;
-          return pa - pb;
-        });
+        for (const station of state.stationMap.values()) {
+          const p = station.prices[selectedOil];
+          if (!p || !Number.isFinite(p.saleDelta)) continue;
+          if (p.saleDelta > 0) {
+            riseCount += 1;
+            riseAmount += p.saleDelta;
+          } else if (p.saleDelta < 0) {
+            fallCount += 1;
+            fallAmount += Math.abs(p.saleDelta);
+          }
+        }
 
-        renderCards(sorted, oil);
-        renderTable(sorted, oil);
+        document.getElementById("riseStats").textContent = `${riseCount}站 / ¥${riseAmount.toFixed(2)}`;
+        document.getElementById("fallStats").textContent = `${fallCount}站 / ¥${fallAmount.toFixed(2)}`;
       }
 
-      function renderCards(list, oil) {
-        const el = document.getElementById("list");
-        el.innerHTML = "";
+      // 新增关键逻辑：构建7天趋势图（按油号分组，分别展示挂牌价/优惠价）
+      function renderTrendChart() {
+        const labelsSet = new Set(state.historyRows.map((r) => normalizeDate(r.price_date)));
+        const labels = [...labelsSet].sort();
 
-        list.forEach((st) => {
+        const aggregator = {};
+        for (const oil of oilTypes) {
+          aggregator[oil] = {};
+          for (const d of labels) {
+            aggregator[oil][d] = { marketSum: 0, saleSum: 0, count: 0 };
+          }
+        }
+
+        for (const row of state.historyRows) {
+          const oil = String(row.oil_type);
+          const d = normalizeDate(row.price_date);
+          if (!aggregator[oil] || !aggregator[oil][d]) continue;
+          aggregator[oil][d].marketSum += Number(row.market_price) || 0;
+          aggregator[oil][d].saleSum += Number(row.top_sale_price) || 0;
+          aggregator[oil][d].count += 1;
+        }
+
+        const colors = {
+          "92": "#ef4444",
+          "95": "#3b82f6",
+          "98": "#8b5cf6",
+          "0": "#10b981",
+        };
+
+        const datasets = [];
+        for (const oil of oilTypes) {
+          datasets.push({
+            label: `${oil} 挂牌价`,
+            data: labels.map((d) => {
+              const cell = aggregator[oil][d];
+              return cell.count ? +(cell.marketSum / cell.count).toFixed(3) : null;
+            }),
+            borderColor: colors[oil],
+            borderWidth: 2,
+            tension: 0.25,
+            spanGaps: true,
+          });
+
+          datasets.push({
+            label: `${oil} 优惠价`,
+            data: labels.map((d) => {
+              const cell = aggregator[oil][d];
+              return cell.count ? +(cell.saleSum / cell.count).toFixed(3) : null;
+            }),
+            borderColor: colors[oil],
+            borderDash: [6, 4],
+            borderWidth: 2,
+            tension: 0.25,
+            spanGaps: true,
+          });
+        }
+
+        const ctx = document.getElementById("trendChart");
+        if (state.chart) state.chart.destroy();
+        state.chart = new Chart(ctx, {
+          type: "line",
+          data: { labels, datasets },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: "index", intersect: false },
+            plugins: { legend: { position: "bottom" } },
+            scales: {
+              y: { ticks: { callback: (v) => `¥${v}` } },
+            },
+          },
+        });
+      }
+
+      function getSortedStations() {
+        const oil = oilTypeSelect.value;
+        const priceType = priceTypeSelect.value;
+
+        return [...state.stationMap.values()].sort((a, b) => {
+          const av = a.prices[oil]?.[priceType];
+          const bv = b.prices[oil]?.[priceType];
+          if (!Number.isFinite(av)) return 1;
+          if (!Number.isFinite(bv)) return -1;
+          return av - bv;
+        });
+      }
+
+      function goDetail(stationId) {
+        window.location.href = `detail.html?station_id=${encodeURIComponent(stationId)}`;
+      }
+
+      function renderList() {
+        const stations = getSortedStations();
+        const oil = oilTypeSelect.value;
+
+        const cardList = document.getElementById("cardList");
+        const tableBody = document.getElementById("tableBody");
+        cardList.innerHTML = "";
+        tableBody.innerHTML = "";
+
+        for (const st of stations) {
           const p = st.prices[oil];
-          if (!p) return;
+          if (!p) continue;
 
-          el.innerHTML += `
-      <div class="card">
-        <h3>${st.name}</h3>
-        <div class="id">ID: ${st.id}</div>
-        <div class="address">${st.address}</div>
+          const card = document.createElement("article");
+          card.className = "station-card";
+          card.innerHTML = `
+            <h3>${st.name}</h3>
+            <div class="meta">ID: ${st.id}</div>
+            <div class="meta">${st.address || ""}</div>
+            <div class="price-grid">
+              <div class="price-box">
+                <div class="price-label">挂牌价</div>
+                <div class="price-value">¥${formatPrice(p.market)}${getArrow(p.marketDelta)}</div>
+              </div>
+              <div class="price-box">
+                <div class="price-label">优惠价</div>
+                <div class="price-value">¥${formatPrice(p.sale)}${getArrow(p.saleDelta)}</div>
+              </div>
+            </div>
+            <div class="meta" style="margin-top:8px;">日期：${p.date}</div>
+          `;
+          card.addEventListener("click", () => goDetail(st.id));
+          cardList.appendChild(card);
 
-        <div class="price-row">
-          <div class="price">
-            <div class="label">挂牌价</div>
-            <div class="value market">${p.market.toFixed(2)}</div>
-          </div>
-          <div class="price">
-            <div class="label">优惠价</div>
-            <div class="value sale">${p.sale.toFixed(2)}</div>
-          </div>
-          <div class="time">
-            <div class="label">价格时间</div>
-            <div class="value time">${p.price_date}</div>
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${st.id}</td>
+            <td>${st.name}</td>
+            <td>${st.address || ""}</td>
+            <td>${oil}</td>
+            <td>¥${formatPrice(p.market)} ${getArrow(p.marketDelta)}</td>
+            <td>¥${formatPrice(p.sale)} ${getArrow(p.saleDelta)}</td>
+            <td>${p.date}</td>
+          `;
+          tr.addEventListener("click", () => goDetail(st.id));
+          tableBody.appendChild(tr);
+        }
 
-        </div>
-      </div>
-    `;
-        });
+        computeDailyStats(oil);
       }
 
-      function renderTable(list, oil) {
-        const tbody = document.getElementById("tbody");
-        tbody.innerHTML = "";
+      async function init() {
+        try {
+          loadingEl.style.display = "block";
+          errorEl.style.display = "none";
 
-        list.forEach((st) => {
-          const p = st.prices[oil];
-          if (!p) return;
+          await fetchData();
+          buildStationMap();
+          renderTrendChart();
+          renderList();
 
-          tbody.innerHTML += `
-      <tr>
-        <td>${st.id}</td>
-        <td>${st.name}</td>
-        <td>${st.address}</td>
-        <td>${oil}</td>
-        <td>${p.market.toFixed(2)}</td>
-        <td>${p.sale.toFixed(2)}</td>
-        <td>${p.price_date}</td>
-      </tr>
-    `;
-        });
+          loadingEl.style.display = "none";
+        } catch (err) {
+          loadingEl.style.display = "none";
+          errorEl.style.display = "block";
+          errorEl.textContent = `加载失败：${err.message || err}`;
+        }
       }
 
-      load();
+      sortBtn.addEventListener("click", renderList);
+      oilTypeSelect.addEventListener("change", renderList);
+      priceTypeSelect.addEventListener("change", renderList);
+
+      init();
     </script>
   </body>
 </html>
