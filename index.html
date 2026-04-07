@@ -39,7 +39,8 @@
 
       /* 修复：顶部下拉和按钮在手机端的宽度比例，使用弹性布局避免挤压 */
       .controls {
-        display: flex;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 8px;
         margin-bottom: 12px;
         align-items: center;
