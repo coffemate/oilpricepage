@@ -37,12 +37,20 @@
         margin-bottom: 12px;
       }
 
+      /* 修复：顶部下拉和按钮在手机端的宽度比例，使用弹性布局避免挤压 */
       .controls {
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 8px;
         margin-bottom: 12px;
+        align-items: center;
       }
+
+      .control-item {
+        min-width: 0;
+      }
+      .control-item.select-item { flex: 1 1 0; }
+      .control-item.button-item { flex: 0 0 34%; }
 
       select, button {
         width: 100%;
@@ -76,7 +84,9 @@
       .rise { color: var(--danger); }
       .fall { color: var(--success); }
 
-      .chart-wrap { height: 280px; }
+      /* 修复：小屏图表容器溢出问题 */
+      .chart-wrap { height: 280px; width: 100%; overflow: hidden; }
+      .chart-wrap canvas { width: 100% !important; height: 100% !important; display: block; }
 
       .card-list { display: grid; gap: 10px; }
       .station-card {
@@ -131,23 +141,34 @@
         .card-list { display: none; }
         table { display: table; }
       }
+      @media (max-width: 560px) {
+        .control-item.button-item { flex-basis: 38%; }
+        .controls { gap: 6px; }
+        .chart-wrap { height: 240px; }
+      }
     </style>
   </head>
   <body>
     <div class="container">
       <div class="panel">
         <div class="controls">
-          <select id="oilTypeSelect" aria-label="油号">
-            <option value="92">92</option>
-            <option value="95">95</option>
-            <option value="98">98</option>
-            <option value="0">0</option>
-          </select>
-          <select id="priceTypeSelect" aria-label="价格类型">
-            <option value="market">挂牌价</option>
-            <option value="sale" selected>优惠价</option>
-          </select>
-          <button id="sortBtn" type="button">按当前条件排序</button>
+          <div class="control-item select-item">
+            <select id="oilTypeSelect" aria-label="油号">
+              <option value="92">92</option>
+              <option value="95">95</option>
+              <option value="98">98</option>
+              <option value="0">0</option>
+            </select>
+          </div>
+          <div class="control-item select-item">
+            <select id="priceTypeSelect" aria-label="价格类型">
+              <option value="market">挂牌价</option>
+              <option value="sale" selected>优惠价</option>
+            </select>
+          </div>
+          <div class="control-item button-item">
+            <button id="sortBtn" type="button">按当前条件排序</button>
+          </div>
         </div>
 
         <!-- 新增功能：列表顶部统计信息（上涨/下降站点数量与金额） -->
@@ -190,7 +211,6 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
       const SUPABASE_URL = "https://nmfaolamflaqrdrjycps.supabase.co";
       const SUPABASE_ANON_KEY =
@@ -224,6 +244,31 @@
         if (delta > 0) return '<span class="arrow up">↑</span>';
         if (delta < 0) return '<span class="arrow down">↓</span>';
         return "";
+      }
+
+      // 修复：Chart.js 移动端偶发未加载导致 `Chart is not defined`，增加多CDN兜底动态加载。
+      async function ensureChartLibrary() {
+        if (window.Chart) return;
+        const cdnList = [
+          "https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js",
+          "https://unpkg.com/chart.js@4.4.3/dist/chart.umd.min.js",
+        ];
+        for (const src of cdnList) {
+          try {
+            await new Promise((resolve, reject) => {
+              const script = document.createElement("script");
+              script.src = src;
+              script.async = false;
+              script.onload = resolve;
+              script.onerror = reject;
+              document.head.appendChild(script);
+            });
+            if (window.Chart) return;
+          } catch (_) {
+            // 尝试下一个 CDN
+          }
+        }
+        throw new Error("Chart.js 加载失败，请检查网络或 CDN 可访问性");
       }
 
       async function fetchData() {
@@ -495,6 +540,7 @@
           loadingEl.style.display = "block";
           errorEl.style.display = "none";
 
+          await ensureChartLibrary();
           await fetchData();
           buildStationMap();
           renderTrendChart();
