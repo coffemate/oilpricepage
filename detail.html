@@ -43,6 +43,14 @@
       /* 修复：移动端图表自适应和溢出问题 */
       .chart-wrap { height: 300px; width: 100%; overflow: hidden; }
       .chart-wrap canvas { width: 100% !important; height: 100% !important; display: block; }
+      .chart-fallback {
+        display: none;
+        border: 1px dashed var(--border);
+        border-radius: 10px;
+        color: var(--muted);
+        text-align: center;
+        padding: 18px 12px;
+      }
 
       .arrow { margin-left: 2px; font-weight: 700; }
       .arrow.up { color: var(--danger); }
@@ -102,7 +110,9 @@
       <div class="panel">
         <div class="meta" style="margin-bottom:8px;">最近 7 天挂牌价 / 优惠价趋势</div>
         <!-- 新增功能：详情页7天折线图 -->
-        <div class="chart-wrap"><canvas id="detailChart"></canvas></div>
+        <div class="chart-wrap" id="chartWrap"><canvas id="detailChart"></canvas></div>
+        <!-- 图表降级提示：图表库不可用时展示，不阻塞页面其它内容 -->
+        <div class="chart-fallback" id="chartFallback">图表加载失败</div>
       </div>
 
       <div id="loading" class="loading">数据加载中...</div>
@@ -150,12 +160,14 @@
         return "";
       }
 
-      // 修复：Chart.js 在移动端偶发不可用时进行多 CDN 动态兜底加载。
+      // CDN fallback 逻辑：优先 CDN，失败后切备用 CDN，最后尝试本地文件 /js/chart.js。
       async function ensureChartLibrary() {
-        if (window.Chart) return;
+        if (typeof Chart !== "undefined") return true;
         const cdnList = [
-          "https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js",
-          "https://unpkg.com/chart.js@4.4.3/dist/chart.umd.min.js",
+          "https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js", // jsdelivr
+          "https://unpkg.com/chart.js@4.4.3/dist/chart.umd.min.js", // unpkg
+          "https://cdn.bootcdn.net/ajax/libs/Chart.js/4.4.3/chart.umd.min.js", // 国内 CDN
+          "js/chart.js", // 本地兜底
         ];
         for (const src of cdnList) {
           try {
@@ -167,12 +179,18 @@
               script.onerror = reject;
               document.head.appendChild(script);
             });
-            if (window.Chart) return;
+            if (typeof Chart !== "undefined") return true;
           } catch (_) {
             // 继续尝试下一个 CDN
           }
         }
-        throw new Error("Chart.js 加载失败，请检查网络连接");
+        return false;
+      }
+
+      // 图表降级处理逻辑：加载失败时隐藏图表容器并显示提示文案。
+      function downgradeChart() {
+        document.getElementById("chartWrap").style.display = "none";
+        document.getElementById("chartFallback").style.display = "block";
       }
 
       async function fetchStationAndPrices() {
@@ -258,8 +276,9 @@
         }
       }
 
-      // 新增关键逻辑：绘制站点7天折线图（各油号挂牌价+优惠价）
-      function renderChart(dayMap) {
+      // Chart 安全判断逻辑：必须确认 Chart 已定义再初始化图表。
+      function initChart(dayMap) {
+        if (typeof Chart === "undefined") return false;
         const labels = [...dayMap.keys()];
         const colors = { "92": "#ef4444", "95": "#3b82f6", "98": "#8b5cf6", "0": "#10b981" };
         const datasets = [];
@@ -296,6 +315,7 @@
             scales: { y: { ticks: { callback: (v) => `¥${v}` } } },
           },
         });
+        return true;
       }
 
       async function init() {
@@ -307,7 +327,7 @@
 
         try {
           loadingEl.style.display = "block";
-          await ensureChartLibrary();
+          const chartReady = await ensureChartLibrary();
           const { station, rows } = await fetchStationAndPrices();
 
           if (!station || station.disabled) {
@@ -318,7 +338,9 @@
           document.getElementById("subTitle").textContent = station.address || "";
 
           const dayMap = groupByDay(rows);
-          renderChart(dayMap);
+          if (!chartReady || !initChart(dayMap)) {
+            downgradeChart();
+          }
           renderTableAndCards(dayMap);
 
           loadingEl.style.display = "none";
