@@ -1,326 +1,57 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>油站详情</title>
-    <style>
-      :root {
-        --bg: #f3f5f9;
-        --card: #fff;
-        --border: #e5e7eb;
-        --text: #111827;
-        --muted: #6b7280;
-        --danger: #d32f2f;
-        --success: #1b8f3d;
-        --brand: #2563eb;
-      }
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
-        background: var(--bg);
-        color: var(--text);
-      }
-      .container { width: min(1200px, 100% - 24px); margin: 12px auto 24px; }
-      .panel {
-        background: var(--card);
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        padding: 12px;
-        margin-bottom: 12px;
-      }
-      .toolbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
-      .btn {
-        border: none;
-        background: var(--brand);
-        color: #fff;
-        border-radius: 8px;
-        padding: 8px 12px;
-        cursor: pointer;
-      }
-      .meta { color: var(--muted); font-size: 13px; }
-      .chart-wrap { height: 300px; width: 100%; overflow: hidden; }
-      .chart-wrap canvas { width: 100% !important; height: 100% !important; display: block; }
-      .chart-fallback {
-        display: none;
-        border: 1px dashed var(--border);
-        border-radius: 10px;
-        color: var(--muted);
-        text-align: center;
-        padding: 18px 12px;
-      }
-
-      .arrow { margin-left: 2px; font-weight: 700; }
-      .arrow.up { color: var(--danger); }
-      .arrow.down { color: var(--success); }
-
-      .cards { display: grid; gap: 10px; }
-      .day-card {
-        background: #fff;
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        padding: 10px;
-      }
-      .day-header { font-weight: 600; margin-bottom: 8px; }
-      .oil-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-      .oil-box { background: #f8fafc; border-radius: 8px; padding: 8px; }
-      .oil-title { font-size: 13px; color: var(--muted); }
-      .oil-price { font-size: 14px; margin-top: 4px; }
-
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        background: #fff;
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        overflow: hidden;
-        display: none;
-      }
-      th, td {
-        border-bottom: 1px solid var(--border);
-        padding: 10px;
-        text-align: left;
-        font-size: 14px;
-      }
-      th { background: #f9fafb; }
-
-      .loading, .error { text-align: center; color: var(--muted); padding: 16px; }
-
-      @media (min-width: 900px) {
-        .cards { display: none; }
-        table { display: table; }
-      }
-      @media (max-width: 560px) {
-        .chart-wrap { height: 240px; }
-      }
-    </style>
-  </head>
-  <body>
-    <div class="container">
-      <div class="panel toolbar">
-        <div>
-          <h2 id="title" style="margin:0 0 4px;">油站详情</h2>
-          <div id="subTitle" class="meta"></div>
-        </div>
-        <button class="btn" id="backBtn" type="button">返回列表</button>
-      </div>
-
-      <div class="panel">
-        <div class="meta" style="margin-bottom:8px;">最近 7 天挂牌价 / 优惠价趋势</div>
-        <div class="chart-wrap" id="chartWrap"><canvas id="detailChart"></canvas></div>
-        <div class="chart-fallback" id="chartFallback">图表加载失败</div>
-      </div>
-
-      <div id="loading" class="loading">数据加载中...</div>
-      <div id="error" class="error" style="display:none;"></div>
-      <div id="cards" class="cards"></div>
-
-      <table id="table">
-        <thead>
-          <tr>
-            <th>日期</th>
-            <th>油号</th>
-            <th>挂牌价</th>
-            <th>优惠价</th>
-          </tr>
-        </thead>
-        <tbody id="tbody"></tbody>
-      </table>
-    </div>
-
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./js/config.js"></script>
-    <script src="./js/supabaseClient.js"></script>
-    <script src="./js/format.js"></script>
-    <script src="./js/dom.js"></script>
-    <script src="./js/chartLoader.js"></script>
-    <script>
-      const { CHART_COLORS, OIL_TYPES } = window.OilPricePage.config;
-      const { createDbClient } = window.OilPricePage.supabaseClient;
-      const { ensureChartLibrary, downgradeChart } = window.OilPricePage.chartLoader;
-      const { dateDaysAgo, formatPrice, normalizeDate, toNumber } = window.OilPricePage.format;
-      const { clear, createArrow, createElement } = window.OilPricePage.dom;
-
-      const params = new URLSearchParams(window.location.search);
-      const stationId = params.get("station_id");
-
-      const loadingEl = document.getElementById("loading");
-      const errorEl = document.getElementById("error");
-      const cardsEl = document.getElementById("cards");
-      const tbodyEl = document.getElementById("tbody");
-      const titleEl = document.getElementById("title");
-      const subTitleEl = document.getElementById("subTitle");
-      let db = null;
-      let chart = null;
-
-      document.getElementById("backBtn").addEventListener("click", () => {
-        window.location.href = "index.html";
-      });
-
-      async function fetchStationAndPrices() {
-        db ||= createDbClient();
-        const fromDate = dateDaysAgo(7);
-        const [stationResp, priceResp] = await Promise.all([
-          db
-            .from("stations")
-            .select("id,name,address,disabled")
-            .eq("id", stationId)
-            .eq("disabled", false)
-            .single(),
-          db
-            .from("oil_prices")
-            .select("station_id,oil_type,market_price,top_sale_price,price_date")
-            .eq("station_id", stationId)
-            .gte("price_date", fromDate)
-            .order("price_date", { ascending: true }),
-        ]);
-
-        if (stationResp.error) throw stationResp.error;
-        if (priceResp.error) throw priceResp.error;
-
-        return { station: stationResp.data, rows: priceResp.data || [] };
-      }
-
-      function groupByDay(rows) {
-        const map = new Map();
-        for (const row of rows) {
-          const date = normalizeDate(row.price_date);
-          if (!map.has(date)) map.set(date, {});
-          map.get(date)[String(row.oil_type)] = {
-            market: toNumber(row.market_price),
-            sale: toNumber(row.top_sale_price),
-          };
-        }
-        return new Map([...map.entries()].sort((a, b) => a[0].localeCompare(b[0])));
-      }
-
-      function renderTableAndCards(dayMap) {
-        clear(cardsEl);
-        clear(tbodyEl);
-
-        const dates = [...dayMap.keys()];
-        for (let i = 0; i < dates.length; i += 1) {
-          const date = dates[i];
-          const current = dayMap.get(date);
-          const previous = i > 0 ? dayMap.get(dates[i - 1]) : null;
-
-          cardsEl.appendChild(createDayCard(date, current, previous));
-
-          for (const oil of OIL_TYPES) {
-            const price = current[oil];
-            if (!price) continue;
-            const prevPrice = previous?.[oil];
-            const marketDelta = prevPrice ? price.market - prevPrice.market : 0;
-            const saleDelta = prevPrice ? price.sale - prevPrice.sale : 0;
-            tbodyEl.appendChild(createPriceRow(date, oil, price, marketDelta, saleDelta));
-          }
-        }
-      }
-
-      function createDayCard(date, current, previous) {
-        const boxes = [];
-        for (const oil of OIL_TYPES) {
-          const price = current[oil];
-          if (!price) continue;
-          const prevPrice = previous?.[oil];
-          const marketDelta = prevPrice ? price.market - prevPrice.market : 0;
-          const saleDelta = prevPrice ? price.sale - prevPrice.sale : 0;
-
-          boxes.push(createElement("div", { className: "oil-box" }, [
-            createElement("div", { className: "oil-title", text: `${oil}号油` }),
-            createElement("div", { className: "oil-price" }, [`挂牌：¥${formatPrice(price.market)} `, createArrow(marketDelta)]),
-            createElement("div", { className: "oil-price" }, [`优惠：¥${formatPrice(price.sale)} `, createArrow(saleDelta)]),
-          ]));
-        }
-
-        return createElement("article", { className: "day-card" }, [
-          createElement("div", { className: "day-header", text: date }),
-          createElement("div", { className: "oil-grid" }, boxes),
-        ]);
-      }
-
-      function createPriceRow(date, oil, price, marketDelta, saleDelta) {
-        return createElement("tr", {}, [
-          createElement("td", { text: date }),
-          createElement("td", { text: oil }),
-          createElement("td", {}, [`¥${formatPrice(price.market)} `, createArrow(marketDelta)]),
-          createElement("td", {}, [`¥${formatPrice(price.sale)} `, createArrow(saleDelta)]),
-        ]);
-      }
-
-      function initChart(dayMap) {
-        if (!window.Chart) return false;
-
-        const labels = [...dayMap.keys()];
-        const datasets = [];
-        for (const oil of OIL_TYPES) {
-          datasets.push({
-            label: `${oil} 挂牌价`,
-            data: labels.map((date) => dayMap.get(date)?.[oil]?.market ?? null),
-            borderColor: CHART_COLORS[oil],
-            borderWidth: 2,
-            tension: 0.25,
-            spanGaps: true,
-          });
-          datasets.push({
-            label: `${oil} 优惠价`,
-            data: labels.map((date) => dayMap.get(date)?.[oil]?.sale ?? null),
-            borderColor: CHART_COLORS[oil],
-            borderDash: [6, 4],
-            borderWidth: 2,
-            tension: 0.25,
-            spanGaps: true,
-          });
-        }
-
-        if (chart) chart.destroy();
-        chart = new window.Chart(document.getElementById("detailChart"), {
-          type: "line",
-          data: { labels, datasets },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            interaction: { mode: "index", intersect: false },
-            plugins: { legend: { position: "bottom" } },
-            scales: { y: { ticks: { callback: (value) => `¥${value}` } } },
-          },
-        });
-        return true;
-      }
-
-      async function init() {
-        if (!stationId) {
-          errorEl.style.display = "block";
-          errorEl.textContent = "缺少 station_id 参数，请从列表页进入。";
-          return;
-        }
-
-        try {
-          loadingEl.style.display = "block";
-          errorEl.style.display = "none";
-
-          const chartReady = await ensureChartLibrary();
-          const { station, rows } = await fetchStationAndPrices();
-
-          titleEl.textContent = `${station.name}（ID: ${station.id}）`;
-          subTitleEl.textContent = station.address || "";
-
-          const dayMap = groupByDay(rows);
-          if (!chartReady || !initChart(dayMap)) {
-            downgradeChart("chartWrap", "chartFallback");
-          }
-          renderTableAndCards(dayMap);
-
-          loadingEl.style.display = "none";
-        } catch (err) {
-          loadingEl.style.display = "none";
-          errorEl.style.display = "block";
-          errorEl.textContent = `加载失败：${err.message || err}`;
-        }
-      }
-
-      init();
-    </script>
-  </body>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>油站详情</title>
+  <style>
+    :root{--bg:#f3f5f9;--card:#fff;--border:#e5e7eb;--text:#111827;--muted:#6b7280;--danger:#d32f2f;--success:#1b8f3d;--brand:#2563eb}
+    *{box-sizing:border-box} body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text)}
+    .container{width:min(1200px,100% - 24px);margin:12px auto 24px}.panel{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:12px}.toolbar{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}.btn{border:none;background:var(--brand);color:#fff;border-radius:8px;padding:8px 12px;cursor:pointer}.meta{color:var(--muted);font-size:13px}
+    .chart-wrap{position:relative;height:300px;width:100%;overflow:hidden}.chart-wrap canvas{width:100%!important;height:100%!important;display:block}.chart-fallback{display:none;border:1px dashed var(--border);border-radius:10px;color:var(--muted);text-align:center;padding:18px 12px}.arrow{margin-left:2px;font-weight:700}.arrow.up{color:var(--danger)}.arrow.down{color:var(--success)}
+    .cards{display:grid;gap:10px}.day-card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:10px}.day-header{font-weight:600;margin-bottom:8px}.oil-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.oil-box{background:#f8fafc;border-radius:8px;padding:8px}.oil-title{font-size:13px;color:var(--muted)}.oil-price{font-size:14px;margin-top:4px}
+    table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--border);border-radius:12px;overflow:hidden;display:none} th,td{border-bottom:1px solid var(--border);padding:10px;text-align:left;font-size:14px} th{background:#f9fafb}.loading,.error{text-align:center;color:var(--muted);padding:16px}
+    @media (min-width:900px){.cards{display:none}table{display:table}} @media (max-width:560px){.chart-wrap{height:320px}}
+  </style>
+</head>
+<body>
+  <div class="container" id="pageRoot">
+    <div class="panel toolbar"><div><h2 id="title" style="margin:0 0 4px;">油站详情</h2><div id="subTitle" class="meta"></div></div><button class="btn" id="backBtn" type="button">返回列表</button></div>
+    <div class="panel"><div class="meta" style="margin-bottom:8px;">最近 7 天挂牌价 / 优惠价趋势</div><div class="chart-wrap" id="chartWrap"><canvas id="detailChart"></canvas></div><div class="chart-fallback" id="chartFallback">图表加载失败</div></div>
+    <div id="loading" class="loading">数据加载中...</div><div id="error" class="error" style="display:none;"></div><div id="cards" class="cards"></div>
+    <table id="table"><thead><tr><th>日期 / 油号</th><th>挂牌价</th><th>优惠价</th></tr></thead><tbody id="tbody"></tbody></table>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./js/config.js"></script><script src="./js/supabaseClient.js"></script><script src="./js/format.js"></script><script src="./js/dom.js"></script><script src="./js/chartLoader.js"></script>
+  <script>
+    const {CHART_COLORS,OIL_TYPES}=window.OilPricePage.config;
+    const {createDbClient}=window.OilPricePage.supabaseClient;
+    const {ensureChartLibrary,downgradeChart}=window.OilPricePage.chartLoader;
+    const {dateDaysAgo,formatPrice,normalizeDate,toNumber}=window.OilPricePage.format;
+    const {clear,createArrow,createElement}=window.OilPricePage.dom;
+    const HIDDEN_KEY='pricepage.hiddenOilTypes'; const VALID_OILS=new Set(OIL_TYPES);
+    const params=new URLSearchParams(window.location.search); const stationId=params.get('station_id');
+    const loadingEl=document.getElementById('loading'), errorEl=document.getElementById('error'), cardsEl=document.getElementById('cards'), tbodyEl=document.getElementById('tbody'), titleEl=document.getElementById('title'), subTitleEl=document.getElementById('subTitle'), pageRootEl=document.getElementById('pageRoot');
+    let db=null, chart=null;
+    const getDb=()=>db||(db=createDbClient());
+    const readHidden=()=>{try{const raw=window.localStorage.getItem(HIDDEN_KEY); if(!raw) return new Set(); const arr=JSON.parse(raw); return new Set(Array.isArray(arr)?arr.filter(x=>VALID_OILS.has(String(x))):[])}catch{return new Set()}};
+    const writeHidden=set=>{try{window.localStorage.setItem(HIDDEN_KEY,JSON.stringify([...set].filter(x=>VALID_OILS.has(String(x)))))}catch{}};
+    function formatAxisValue(value){const number=Number(value); return Number.isFinite(number)?number.toFixed(2):String(value);}
+    function getChartOptions(){const compact=window.matchMedia('(max-width:560px)').matches; return {responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},layout:{padding:{top:4,bottom:compact?0:4}},plugins:{legend:{position:compact?'top':'bottom',labels:{boxWidth:compact?8:12,boxHeight:compact?8:12,usePointStyle:compact,generateLabels(chartInstance){return OIL_TYPES.map(oil=>{const datasetIndex=chartInstance.data.datasets.findIndex(d=>d.oilType===oil); const visible=chartInstance.data.datasets.some((d,i)=>d.oilType===oil&&chartInstance.isDatasetVisible(i)); return {text:`${oil}号油`,fillStyle:CHART_COLORS[oil],strokeStyle:CHART_COLORS[oil],hidden:!visible,lineWidth:2,datasetIndex,oilType:oil};});}} ,onClick(event,legendItem,legend){const oilType=legendItem.oilType||legend.chart.data.datasets[legendItem.datasetIndex]?.oilType; if(!oilType) return; const nextHidden=readHidden(); nextHidden.has(oilType)?nextHidden.delete(oilType):nextHidden.add(oilType); updateVisibilityAndList(legend.chart,nextHidden);}}},scales:{x:{ticks:{autoSkip:true,maxTicksLimit:compact?4:7}},y:{ticks:{callback:v=>`￥${formatAxisValue(v)}`}}}};}
+    function applyHidden(chartInstance, hiddenOilTypes){chartInstance.data.datasets.forEach((d,i)=>chartInstance.setDatasetVisibility(i,!hiddenOilTypes.has(d.oilType)));}
+    function updateVisibilityAndList(chartInstance, hiddenOilTypes){writeHidden(hiddenOilTypes); applyHidden(chartInstance, hiddenOilTypes); chartInstance.update(); const dayMap=groupByDay(currentRows()); renderTableAndCards(dayMap, hiddenOilTypes);}
+    function resizeChart(){if(!chart) return; requestAnimationFrame(()=>{chart?.resize(); chart?.update('none');});}
+    document.getElementById('backBtn').addEventListener('click',()=>{window.location.href='index.html';});
+    async function fetchStationAndPrices(){db ||= createDbClient(); const fromDate=dateDaysAgo(7); const [a,b]=await Promise.all([db.from('stations').select('id,name,address,disabled').eq('id',stationId).eq('disabled',false).single(), db.from('oil_prices').select('station_id,oil_type,market_price,top_sale_price,price_date').eq('station_id',stationId).gte('price_date',fromDate).order('price_date',{ascending:true})]); if(a.error) throw a.error; if(b.error) throw b.error; return {station:a.data, rows:b.data||[]}; }
+    function groupByDay(rows){const map=new Map(); for(const row of rows){const date=normalizeDate(row.price_date); if(!map.has(date)) map.set(date,{}); map.get(date)[String(row.oil_type)]={market:toNumber(row.market_price),sale:toNumber(row.top_sale_price)};} return new Map([...map.entries()].sort((a,b)=>a[0].localeCompare(b[0])));}
+    function createPriceRow(date, oil, price, marketDelta, saleDelta){return createElement('tr',{attrs:{'data-station-id':stationId}},[createElement('td',{text:`${date} / ${oil}号油`}),createElement('td',{},[`￥${formatPrice(price.market)} `,createArrow(marketDelta)]),createElement('td',{},[`￥${formatPrice(price.sale)} `,createArrow(saleDelta)])]);}
+    function createDayCard(date,current,previous,hiddenOilTypes){const boxes=[]; for(const oil of OIL_TYPES){if(hiddenOilTypes.has(oil)) continue; const price=current[oil]; if(!price) continue; const prev=previous?.[oil]; const md=prev?price.market-prev.market:0; const sd=prev?price.sale-prev.sale:0; boxes.push(createElement('div',{className:'oil-box'},[createElement('div',{className:'oil-title',text:`${oil}号油`}),createElement('div',{className:'oil-price',text:`挂牌价：￥${formatPrice(price.market)}`,attrs:{'data-delta':md}}),createElement('div',{className:'oil-price',text:`优惠价：￥${formatPrice(price.sale)}`,attrs:{'data-delta':sd}})])); } return createElement('article',{className:'day-card',attrs:{'data-station-id':stationId}},[createElement('div',{className:'day-header',text:date}),createElement('div',{className:'oil-grid'},boxes)]);}
+    function renderTableAndCards(dayMap,hiddenOilTypes){clear(cardsEl); clear(tbodyEl); const dates=[...dayMap.keys()]; for(let i=0;i<dates.length;i++){const date=dates[i], current=dayMap.get(date), previous=i>0?dayMap.get(dates[i-1]):null; cardsEl.appendChild(createDayCard(date,current,previous,hiddenOilTypes)); for(const oil of OIL_TYPES){if(hiddenOilTypes.has(oil)) continue; const price=current[oil]; if(!price) continue; const prev=previous?.[oil]; const md=prev?price.market-prev.market:0; const sd=prev?price.sale-prev.sale:0; tbodyEl.appendChild(createPriceRow(date,oil,price,md,sd));}}}
+    function currentRows(){return stateRows;}
+    let stateRows=[];
+    function initChart(dayMap){if(!window.Chart) return false; const hidden=readHidden(); const labels=[...dayMap.keys()]; const datasets=[]; for(const oil of OIL_TYPES){datasets.push({label:`${oil}号油 - 挂牌价`,oilType:oil,priceType:'market',data:labels.map(date=>dayMap.get(date)?.[oil]?.market ?? null),borderColor:CHART_COLORS[oil],borderWidth:2,tension:0.25,spanGaps:true}); datasets.push({label:`${oil}号油 - 优惠价`,oilType:oil,priceType:'sale',data:labels.map(date=>dayMap.get(date)?.[oil]?.sale ?? null),borderColor:CHART_COLORS[oil],borderDash:[6,4],borderWidth:2,tension:0.25,spanGaps:true});} if(chart) chart.destroy(); chart=new window.Chart(document.getElementById('detailChart'),{type:'line',data:{labels,datasets},options:getChartOptions()}); applyHidden(chart,hidden); resizeChart(); return true;}
+    async function init(){if(!stationId){errorEl.style.display='block'; errorEl.textContent='缺少站点编号参数，请从列表页进入。'; return;} try{loadingEl.style.display='block'; errorEl.style.display='none'; const chartReady=await ensureChartLibrary(); const {station,rows}=await fetchStationAndPrices(); stateRows=rows; pageRootEl.dataset.stationId=station.id; titleEl.textContent=station.name; subTitleEl.textContent=`${station.address||''}${station.address?' · ':''}站点编号已隐藏`; const hidden=readHidden(); const dayMap=groupByDay(rows); if(!chartReady || !initChart(dayMap)) downgradeChart('chartWrap','chartFallback'); renderTableAndCards(dayMap,hidden); loadingEl.style.display='none';}catch(err){loadingEl.style.display='none'; errorEl.style.display='block'; errorEl.textContent=`加载失败：${err.message||err}`;}}
+    window.addEventListener('resize',resizeChart); window.addEventListener('orientationchange',resizeChart); init();
+  </script>
+</body>
 </html>
